@@ -50,12 +50,21 @@ public class VoronoiBiomeTerrain : MonoBehaviour
         {
             for (int x = 0; x <= width; x++, i++)
             {
-                Biome biome = GetClosestBiome(x, z);
-                float nx = (x + biome.seed) * biome.noiseScale;
-                float nz = (z + biome.seed) * biome.noiseScale;
-                float y = Mathf.PerlinNoise(nx, nz) * biome.heightMultiplier;
-                vertices[i] = new Vector3(x * meshScale, y, z * meshScale);
-                colors[i] = biome.color;
+                BiomeBlend blend = GetBlendedBiome(x, z);
+
+                Biome bA = blend.biomeA;
+                Biome bB = blend.biomeB;
+                float t = blend.blendFactor;
+
+                float nA = Mathf.PerlinNoise((x + bA.seed) * bA.noiseScale, (z + bA.seed) * bA.noiseScale);
+                float nB = Mathf.PerlinNoise((x + bB.seed) * bB.noiseScale, (z + bB.seed) * bB.noiseScale);
+
+                float height = Mathf.Lerp(nA * bA.heightMultiplier, nB * bB.heightMultiplier, t);
+                Color color = Color.Lerp(bA.color, bB.color, t);
+
+                vertices[i] = new Vector3(x * meshScale, height, z * meshScale);
+                colors[i] = color;
+
             }
         }
 
@@ -86,22 +95,42 @@ public class VoronoiBiomeTerrain : MonoBehaviour
         GetComponent<MeshFilter>().mesh = mesh;
     }
 
-    Biome GetClosestBiome(int x, int z)
+    BiomeBlend GetBlendedBiome(int x, int z)
     {
-        float minDist = float.MaxValue;
-        int closestIndex = 0;
+        List<(Biome biome, float distance)> distances = new List<(Biome, float)>();
+
+        Vector2 point = new Vector2(x, z);
         for (int i = 0; i < _biomeCenters.Length; i++)
         {
-            float dist = Vector2.Distance(new Vector2(x, z), _biomeCenters[i]);
-            if (dist < minDist)
-            {
-                minDist = dist;
-                closestIndex = i;
-            }
+            float dist = Vector2.Distance(point, _biomeCenters[i]);
+            distances.Add((_biomes[i], dist));
         }
-        return _biomes[closestIndex];
+
+        // Trier les distances pour garder les 2 plus proches
+        distances.Sort((a, b) => a.distance.CompareTo(b.distance));
+        float d0 = distances[0].distance;
+        float d1 = distances[1].distance;
+
+        float total = d0 + d1;
+        float t = d0 / total; // poids entre les deux
+
+        Biome b0 = distances[0].biome;
+        Biome b1 = distances[1].biome;
+
+        return new BiomeBlend
+        {
+            biomeA = b0,
+            biomeB = b1,
+            blendFactor = Mathf.Clamp01(1f - t) // entre 0 et 1
+        };
     }
 
+    class BiomeBlend
+    {
+        public Biome biomeA;
+        public Biome biomeB;
+        public float blendFactor; // 0 = biomeA, 1 = biomeB
+    }
     class Biome
     {
         public string name;
