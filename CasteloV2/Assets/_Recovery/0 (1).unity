@@ -285,42 +285,23 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: ace11f6d1d8be564788d1476e974ef8b, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::HexMapGenerator
-  terrainMaterial: {fileID: 2100000, guid: c287929ec50abb144a34fce090e3d655, type: 2}
-  autoUpdate: 1
-  mapWidth: 200
-  mapHeight: 200
-  scale: 0.03
-  heightMultiplier: 80
+  terrainMaterial: {fileID: 2100000, guid: 3d61098a14393764cbece139a47dae63, type: 2}
+  mapWidth: 50
+  mapHeight: 50
+  scale: 0.1
+  heightMultiplier: 10
   heightCurve:
     serializedVersion: 2
     m_Curve:
     - serializedVersion: 3
       time: 0
       value: 0
-      inSlope: 0.3333333
-      outSlope: 0.3333333
+      inSlope: 1
+      outSlope: 1
       tangentMode: 34
       weightedMode: 0
       inWeight: 0
-      outWeight: 0.33333334
-    - serializedVersion: 3
-      time: 0.6
-      value: 0.2
-      inSlope: 0.3333333
-      outSlope: 1.1666667
-      tangentMode: 5
-      weightedMode: 0
-      inWeight: 0.33333334
-      outWeight: 0.33333334
-    - serializedVersion: 3
-      time: 0.8
-      value: 0.8
-      inSlope: 1.9640282
-      outSlope: 1.9640282
-      tangentMode: 1
-      weightedMode: 0
-      inWeight: 0.33333334
-      outWeight: 0.33333334
+      outWeight: 0
     - serializedVersion: 3
       time: 1
       value: 1
@@ -328,16 +309,16 @@ MonoBehaviour:
       outSlope: 1
       tangentMode: 34
       weightedMode: 0
-      inWeight: 0.33333334
+      inWeight: 0
       outWeight: 0
     m_PreInfinity: 2
     m_PostInfinity: 2
     m_RotationOrder: 4
-  seaLevel: 0
-  moistureScale: 0.01
-  moistureOffset: 2000
-  riverFrequency: 0.02
-  riverWidth: 0.044
+  seaLevel: 1
+  moistureScale: 3
+  moistureOffset: 5000
+  riverFrequency: 0.06
+  riverWidth: 0.07
 --- !u!4 &397561124
 Transform:
   m_ObjectHideFlags: 0

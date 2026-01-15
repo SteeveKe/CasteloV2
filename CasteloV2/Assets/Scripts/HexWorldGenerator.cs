@@ -1,95 +1,81 @@
 using UnityEngine;
 using System.Collections.Generic;
 
+[ExecuteAlways]
 public class HexWorldGenerator : MonoBehaviour
 {
     [Header("Réglages Visuels")]
-    // ICI : Tu vas glisser ton matériau créé manuellement
-    public Material terrainMaterial; 
+    public Material terrainMaterial; // Utilise un shader "Particles/Standard Surface" !
+    public bool autoUpdate = true;
 
-    [Header("Paramètres de la Carte")]
-    public int mapWidth = 30;
-    public int mapHeight = 30;
+    [Header("Dimensions")]
+    [Range(10, 200)] public int mapWidth = 50; // On peut monter beaucoup plus haut maintenant !
+    [Range(10, 200)] public int mapHeight = 50;
 
-    [Header("Paramètres du Bruit")]
-    public float noiseScale = 0.1f;
-    public float heightMultiplier = 6f;
-    public int seaLevel = 2;
+    [Header("Génération")]
+    public float scale = 0.1f;
+    public float heightMultiplier = 10f;
+    public AnimationCurve heightCurve = AnimationCurve.Linear(0, 0, 1, 1);
+    public int seaLevel = 3;
 
-    [Header("Paramètres des Rivières")]
+    [Header("Humidité & Rivières")]
+    public float moistureScale = 0.1f;
+    public float moistureOffset = 500f;
     public float riverFrequency = 0.06f;
     [Range(0f, 0.2f)] public float riverWidth = 0.07f;
 
-    private Mesh hexMesh; 
+    // --- LISTES POUR LE MESH UNIQUE ---
+    // Au lieu de créer des objets, on stocke tout ici
+    private List<Vector3> vertices = new List<Vector3>();
+    private List<int> triangles = new List<int>();
+    private List<Color> colors = new List<Color>();
+    private List<Vector3> normals = new List<Vector3>();
+
+    private Mesh globalMesh;
+    private const float outerRadius = 1f;
+    private const float height = 1f;
+
+    void OnValidate()
+    {
+        if (autoUpdate)
+        {
+            #if UNITY_EDITOR
+                UnityEditor.EditorApplication.delayCall += GenerateWorld;
+            #endif
+        }
+    }
 
     void Start()
     {
-        // Sécurité : Si tu as oublié de mettre le matériau, on met une erreur
-        if (terrainMaterial == null)
-        {
-            Debug.LogError("ATTENTION : Tu as oublié de glisser le Material 'HexMat' dans la case 'Terrain Material' du script !");
-            return;
-        }
-
-        hexMesh = CreateHexagonMesh();
         GenerateWorld();
     }
 
-    // --- (La fonction CreateHexagonMesh ne change pas) ---
-    Mesh CreateHexagonMesh()
+    public void GenerateWorld()
     {
-        Mesh mesh = new Mesh();
-        List<Vector3> vertices = new List<Vector3>();
-        List<int> triangles = new List<int>();
+        if (this == null) return;
+
+        // 1. Nettoyage et Préparation
+        if (terrainMaterial == null) { Debug.LogError("Il faut le Material 'BiomeMat' !"); return; }
         
-        float outerRadius = 1f;
-        float height = 1f;
-        Vector3[] cornersTop = new Vector3[6];
-        Vector3[] cornersBot = new Vector3[6];
-
-        for (int i = 0; i < 6; i++)
+        // On détruit l'ancien mesh holder s'il existe
+        Transform oldHolder = transform.Find("WorldMesh");
+        if (oldHolder != null)
         {
-            float angle_deg = 60 * i - 30;
-            float angle_rad = Mathf.PI / 180f * angle_deg;
-            float x = Mathf.Cos(angle_rad) * outerRadius;
-            float z = Mathf.Sin(angle_rad) * outerRadius;
-            cornersTop[i] = new Vector3(x, height, z);
-            cornersBot[i] = new Vector3(x, 0, z);
-        }
-        Vector3 centerTop = new Vector3(0, height, 0);
-
-        for (int i = 0; i < 6; i++) // Top
-        {
-            vertices.Add(centerTop); vertices.Add(cornersTop[i]); vertices.Add(cornersTop[(i + 1) % 6]);
-            int vCount = vertices.Count;
-            triangles.Add(vCount - 3); triangles.Add(vCount - 2); triangles.Add(vCount - 1);
-        }
-        for (int i = 0; i < 6; i++) // Sides
-        {
-            Vector3 cTop1 = cornersTop[i]; Vector3 cTop2 = cornersTop[(i + 1) % 6];
-            Vector3 cBot1 = cornersBot[i]; Vector3 cBot2 = cornersBot[(i + 1) % 6];
-            
-            vertices.Add(cTop1); vertices.Add(cBot1); vertices.Add(cBot2);
-            triangles.Add(vertices.Count - 3); triangles.Add(vertices.Count - 2); triangles.Add(vertices.Count - 1);
-            vertices.Add(cTop1); vertices.Add(cBot2); vertices.Add(cTop2);
-            triangles.Add(vertices.Count - 3); triangles.Add(vertices.Count - 2); triangles.Add(vertices.Count - 1);
+             if (Application.isPlaying) Destroy(oldHolder.gameObject);
+             else DestroyImmediate(oldHolder.gameObject);
         }
 
-        mesh.vertices = vertices.ToArray();
-        mesh.triangles = triangles.ToArray();
-        mesh.RecalculateNormals(); 
-        return mesh;
-    }
+        // 2. On vide les listes (Reboot)
+        vertices.Clear();
+        triangles.Clear();
+        colors.Clear();
+        normals.Clear(); // On peut aussi laisser Unity recalculer, mais on vide par sécurité
 
-    void GenerateWorld()
-    {
-        // Nettoyage
-        foreach(Transform child in transform) Destroy(child.gameObject);
-
-        float seed = Random.Range(0, 10000f);
+        float seed = 0;
         float xOffset = 1.732f;
         float zOffset = 1.5f;
 
+        // 3. BOUCLE DE GÉNÉRATION DES DONNÉES
         for (int x = 0; x < mapWidth; x++)
         {
             for (int z = 0; z < mapHeight; z++)
@@ -98,75 +84,146 @@ public class HexWorldGenerator : MonoBehaviour
                 if (z % 2 == 1) xPos += xOffset / 2f;
                 float zPos = z * zOffset;
 
-                float hNoise = Mathf.PerlinNoise((x + seed) * noiseScale, (z + seed) * noiseScale);
-                float rNoise = Mathf.PerlinNoise((x + seed) * riverFrequency, (z + seed) * riverFrequency);
-                float rDig = Mathf.Abs(rNoise - 0.5f);
+                // Calculs des Bruits (Identique à avant)
+                float rawH = Mathf.PerlinNoise((x + seed) * scale, (z + seed) * scale);
+                float adjH = heightCurve.Evaluate(rawH);
+                int finalY = Mathf.FloorToInt(adjH * heightMultiplier);
 
-                int finalY = Mathf.FloorToInt(hNoise * heightMultiplier);
-                bool isRiver = rDig < riverWidth;
-                
+                float moist = Mathf.PerlinNoise((x + seed + moistureOffset) * moistureScale, (z + seed + moistureOffset) * moistureScale);
+                float rNoise = Mathf.PerlinNoise((x + seed) * riverFrequency, (z + seed) * riverFrequency);
+                bool isRiver = (Mathf.Abs(rNoise - 0.5f) < riverWidth) && rawH < 0.6f;
+
                 if (isRiver && finalY >= seaLevel) finalY = seaLevel - 1;
 
+                // --- CONSTRUCTION DU MESH ---
+                // Au lieu de "CreateObject", on "AddHexData"
                 for (int y = -1; y <= finalY; y++)
-                    CreateHexBlock(new Vector3(xPos, y, zPos), y, finalY, isRiver);
-                
+                {
+                    Color c = GetBiomeColor(y, finalY, moist, rawH, isRiver);
+                    AddHexToLists(new Vector3(xPos, y, zPos), c);
+                }
+
                 if (finalY < seaLevel)
+                {
+                    Color waterColor = new Color(0, 0.4f, 1f, 0.6f);
                     for (int y = finalY + 1; y <= seaLevel; y++)
-                        CreateWaterBlock(new Vector3(xPos, y, zPos));
+                    {
+                        AddHexToLists(new Vector3(xPos, y, zPos), waterColor);
+                    }
+                }
             }
+        }
+
+        // 4. CRÉATION DE L'OBJET UNIQUE
+        CreateSingleMeshObject();
+    }
+
+    void AddHexToLists(Vector3 pos, Color color)
+    {
+        // On calcule les 6 coins relatifs au centre de l'hexagone
+        // Astuce : On ne recalcule pas Sin/Cos à chaque fois, on pourrait optimiser, mais c'est déjà rapide.
+        Vector3[] tops = new Vector3[6];
+        Vector3[] bots = new Vector3[6];
+        
+        for (int i = 0; i < 6; i++)
+        {
+            float rad = Mathf.PI / 180f * (60 * i - 30);
+            float x = Mathf.Cos(rad) * outerRadius;
+            float z = Mathf.Sin(rad) * outerRadius;
+            tops[i] = pos + new Vector3(x, height, z); // On ajoute 'pos' ici !
+            bots[i] = pos + new Vector3(x, 0, z);
+        }
+        Vector3 centerTop = pos + new Vector3(0, height, 0);
+
+        int startIndex = vertices.Count; // Important pour les triangles
+
+        // --- FACE DU HAUT (6 Triangles) ---
+        for (int i = 0; i < 6; i++)
+        {
+            vertices.Add(centerTop);
+            vertices.Add(tops[(i + 1) % 6]);
+            vertices.Add(tops[i]);
+
+            // Ajout de la couleur pour ces 3 sommets
+            colors.Add(color); colors.Add(color); colors.Add(color);
+
+            // Normale vers le haut
+            normals.Add(Vector3.up); normals.Add(Vector3.up); normals.Add(Vector3.up);
+
+            triangles.Add(startIndex + 0);
+            triangles.Add(startIndex + 1);
+            triangles.Add(startIndex + 2);
+            startIndex += 3;
+        }
+
+        // --- FACES DES CÔTÉS (12 Triangles) ---
+        for (int i = 0; i < 6; i++)
+        {
+            Vector3 cT1 = tops[i]; Vector3 cT2 = tops[(i + 1) % 6];
+            Vector3 cB1 = bots[i]; Vector3 cB2 = bots[(i + 1) % 6];
+
+            // On ajoute les 4 points du quad (2 triangles)
+            // Triangle 1
+            vertices.Add(cT1); vertices.Add(cB2); vertices.Add(cB1);
+            colors.Add(color); colors.Add(color); colors.Add(color);
+            // Pour les normales des côtés, c'est plus joli de laisser Unity recalculer à la fin
+            // ou de mettre des normales horizontales. Pour simplifier ici, on met Vector3.up temporairement
+            normals.Add(Vector3.up); normals.Add(Vector3.up); normals.Add(Vector3.up); 
+            
+            triangles.Add(startIndex); triangles.Add(startIndex + 1); triangles.Add(startIndex + 2);
+            startIndex += 3;
+
+            // Triangle 2
+            vertices.Add(cT1); vertices.Add(cT2); vertices.Add(cB2);
+            colors.Add(color); colors.Add(color); colors.Add(color);
+            normals.Add(Vector3.up); normals.Add(Vector3.up); normals.Add(Vector3.up);
+
+            triangles.Add(startIndex); triangles.Add(startIndex + 1); triangles.Add(startIndex + 2);
+            startIndex += 3;
         }
     }
 
-    void CreateHexBlock(Vector3 pos, int y, int maxY, bool isRiver)
+    void CreateSingleMeshObject()
     {
-        GameObject hex = new GameObject($"Hex");
-        hex.transform.position = pos;
-        hex.transform.parent = this.transform;
+        GameObject worldObj = new GameObject("WorldMesh");
+        worldObj.transform.parent = this.transform;
+        worldObj.transform.localPosition = Vector3.zero;
+
+        MeshFilter mf = worldObj.AddComponent<MeshFilter>();
+        MeshRenderer mr = worldObj.AddComponent<MeshRenderer>();
+
+        globalMesh = new Mesh();
         
-        MeshFilter mf = hex.AddComponent<MeshFilter>();
-        MeshRenderer mr = hex.AddComponent<MeshRenderer>();
+        // --- OPTIMISATION TRÈS IMPORTANTE ---
+        // Par défaut, un Mesh est limité à 65000 sommets.
+        // Avec cette ligne, on passe à 4 milliards (nécessaire pour les grandes cartes)
+        globalMesh.indexFormat = UnityEngine.Rendering.IndexFormat.UInt32;
+
+        globalMesh.SetVertices(vertices);
+        globalMesh.SetTriangles(triangles, 0);
+        globalMesh.SetColors(colors); // On injecte les couleurs calculées
         
-        mf.mesh = hexMesh;
-        // On utilise le matériau que tu as glissé dans l'éditeur
-        mr.material = terrainMaterial; 
+        globalMesh.RecalculateNormals(); // Calcul auto des lumières
+        globalMesh.RecalculateBounds();
+
+        mf.mesh = globalMesh;
+        mr.material = terrainMaterial;
         
+        // Active les ombres
         mr.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.On;
         mr.receiveShadows = true;
-
-        MaterialPropertyBlock props = new MaterialPropertyBlock();
-        Color color = Color.green;
-
-        if (y < maxY) color = new Color(0.4f, 0.3f, 0.2f); 
-        else if (isRiver) color = Color.grey; 
-        else if (y < seaLevel + 1) color = new Color(1f, 0.9f, 0.5f); 
-        else if (y > heightMultiplier * 0.7f) color = Color.white; 
-        else if (y > heightMultiplier * 0.4f) color = Color.grey; 
-
-        props.SetColor("_BaseColor", color); // URP utilise _BaseColor
-        // Si ça reste noir/blanc, décommente la ligne suivante :
-        props.SetColor("_Color", color); // Built-in utilise _Color
-
-        mr.SetPropertyBlock(props);
     }
 
-    void CreateWaterBlock(Vector3 pos)
+    Color GetBiomeColor(int y, int maxY, float moisture, float heightRaw, bool isRiver)
     {
-        GameObject water = new GameObject("Water");
-        water.transform.position = pos;
-        water.transform.parent = this.transform;
-        
-        MeshFilter mf = water.AddComponent<MeshFilter>();
-        MeshRenderer mr = water.AddComponent<MeshRenderer>();
-        
-        mf.mesh = hexMesh;
-        mr.material = terrainMaterial; // On utilise le même mat pour tester
-
-        MaterialPropertyBlock props = new MaterialPropertyBlock();
-        Color waterCol = new Color(0, 0.4f, 1f, 1f); // Bleu
-        
-        props.SetColor("_BaseColor", waterCol);
-        props.SetColor("_Color", waterCol);
-        
-        mr.SetPropertyBlock(props);
+        // (Logique identique à avant)
+        if (y < maxY) return new Color(0.3f, 0.2f, 0.1f); 
+        if (isRiver) return new Color(0.4f, 0.4f, 0.4f); 
+        if (y <= seaLevel + 1) return new Color(0.95f, 0.85f, 0.5f); 
+        if (heightRaw > 0.8f) return Color.white; 
+        else if (heightRaw > 0.6f) return new Color(0.5f, 0.5f, 0.5f); 
+        if (moisture < 0.3f) return new Color(0.8f, 0.7f, 0.4f); 
+        else if (moisture < 0.6f) return new Color(0.4f, 0.8f, 0.2f); 
+        else return new Color(0.1f, 0.6f, 0.1f); 
     }
 }
